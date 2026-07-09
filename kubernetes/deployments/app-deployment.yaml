@@ -1,0 +1,80 @@
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  labels:
+    app: my-app
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: app-container
+          image: my-app-image:v1.0.0
+          ports:
+            - containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      imagePullSecrets:
+        - name: my-docker-secret
+
+---
+apiVersion: batch/v1beta1
+kind: Job
+metadata:
+  name: app-deployment-rollback
+spec:
+  template:
+    spec:
+      containers:
+        - name: rollback-container
+          image: my-app-image:v0.9.0
+          command: ["bash", "-c", "kubectl rollout undo deployment/app-deployment"]
+      restartPolicy: OnFailure
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: app-deployment-rollback-binding
+spec:
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: cluster-admin
+  subjects:
+    - kind: ServiceAccount
+      name: default
+      namespace: default
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: app-deployment-rollback-role
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch"]
+```
+
+This YAML configuration sets up a Kubernetes Deployment with rolling update capabilities and includes a Job to handle rollbacks. The `ClusterRoleBinding` ensures that the default service account has the necessary permissions to perform rollback operations on the deployment.
